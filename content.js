@@ -237,3 +237,9 @@ const SAMPLE_HOUSEHOLDS = [
   ["The Russo family", "39 Elm Ave", "555-0111", "", "Firefighter", ["Firefighter", "Search & rescue"], ["Fire extinguisher", "Pool / large water source"], "", "2 dogs"],
   ["Mei Chen", "45 Elm Ave", "555-0112", "", "Pharmacist", ["Mandarin", "Cantonese"], [], ""],
 ];
+
+/* [adults, children, ages & details] for each sample household above, in order */
+const SAMPLE_MEMBERS = [
+  [2, 2, "ages 6 and 9"], [1, 0], [2, 1, "infant, 8 months"], [1, 0], [2, 0], [1, 1, "age 12"],
+  [1, 0], [2, 0, "Paul is 78"], [1, 0], [2, 3, "ages 3, 5, 10"], [2, 2, "teens"], [3, 0, "parents (70s) live with Mei"],
+];
