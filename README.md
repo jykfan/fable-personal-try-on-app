@@ -11,7 +11,7 @@ A neighborhood directory and emergency-preparedness organizer. Collect your neig
 - **Print**: A print-ready booklet (letter size) you can configure. It has a cover with important numbers, a directory grouped by street, a skills and resources index, pod check-off sheets, the guides, the go-bag checklist, OK/HELP window signs, and **blank sign-up and consent forms** to take door to door.
 - **Import & export** (Directory tab or Settings):
   - **.json backup**: restores everything (households, pods, settings) and replaces the current data.
-  - **.csv spreadsheet**: adds households and updates any with the same name and address. Nothing is deleted. It accepts the app's own CSV export or your own spreadsheet. The first row must have column headings, including at least `names`/`name` or `address`. Common variations like "Street Address" and "Phone Number" are recognized, and tab-separated files work too.
+  - **.csv spreadsheet**: holds the same complete data as the backup. Households come first, one row each, including pod and pod captain. Below them are labeled `## Settings`, `## Important numbers` and `## Pods` sections. Importing adds households and updates any with the same name and address. Nothing is deleted. Settings, numbers and pods are restored when those sections are present. It accepts the app's own CSV export or your own spreadsheet. The first row must have column headings, including at least `names`/`name` or `address`. Common variations like "Street Address" and "Phone Number" are recognized, and tab-separated files work too.
 
 ## Privacy model
 

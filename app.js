@@ -875,20 +875,47 @@
     toast("Backup downloaded");
   }
 
+  // Settings stored in the CSV's "## Settings" section: [state key, label in the file]
+  const CSV_SETTINGS = [
+    ["name", "Neighborhood name"],
+    ["meetingPoint", "Meeting point"],
+    ["organizer", "Organizer"],
+    ["organizerContact", "Organizer contact"],
+    ["podSize", "Households per pod"],
+  ];
+
+  // The CSV holds everything the .json backup does: households (one row each),
+  // then labeled sections for settings, important numbers and the pod list.
   function exportCSV() {
-    const cols = ["names", "address", "unit", "phone", "phone2", "email", "occupation", "household", "skills", "resources", "needs", "pets", "consent", "consentDate", "signedBy", "hiddenFields", "pod", "notes"];
+    const cols = ["names", "address", "unit", "phone", "phone2", "email", "occupation", "household", "skills", "resources", "needs", "pets", "consent", "consentDate", "signedBy", "hiddenFields", "pod", "podCaptain", "notes"];
     const cell = (v) => {
       const s = String(v ?? "");
-      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+      return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
-    const rows = state.households.slice().sort(byAddress).map((h) => [
+    const line = (arr) => arr.map(cell).join(",");
+    // Pods are matched by name on import, so give every pod a distinct name in the file
+    const podNames = new Map(), seen = new Set();
+    state.pods.forEach((p, i) => {
+      const base = p.name || `Pod ${i + 1}`;
+      let name = base, n = 2;
+      while (seen.has(name.toLowerCase())) name = `${base} (${n++})`;
+      seen.add(name.toLowerCase()); podNames.set(p.id, name);
+    });
+    const podOf = (h) => state.pods.find((p) => p.id === h.podId);
+    const lines = [line(cols), ...state.households.slice().sort(byAddress).map((h) => line([
       h.names, h.address, h.unit, h.phone, h.phone2, h.email, h.occupation, h.household,
       h.skills.join("; "), h.resources.join("; "), h.needs, h.pets,
       h.consent.given ? "yes" : "no", h.consent.date, h.consent.signedBy,
       SHARE_FIELDS.filter(([k]) => !h.consent.share[k]).map(([k]) => k).join("; "),
-      state.pods.find((p) => p.id === h.podId)?.name || "", h.notes,
-    ].map(cell).join(","));
-    download(`mini-yellow-pages-${slug()}-${today()}.csv`, [cols.join(","), ...rows].join("\n"), "text/csv");
+      podNames.get(h.podId) || "", podOf(h)?.captainId === h.id ? "yes" : "", h.notes,
+    ]))];
+    lines.push("", "## Settings", line(["setting", "value"]),
+      ...CSV_SETTINGS.map(([k, label]) => line([label, state.settings[k]])));
+    lines.push("", "## Important numbers", line(["label", "number"]),
+      ...state.settings.numbers.map((n) => line([n.label, n.number])));
+    lines.push("", "## Pods", line(["pod"]),
+      ...state.pods.map((p) => line([podNames.get(p.id)])));
+    download(`mini-yellow-pages-${slug()}-${today()}.csv`, lines.join("\n"), "text/csv");
     toast("Spreadsheet downloaded");
   }
 
@@ -962,15 +989,28 @@
     signedBy: ["signedby", "givenby"],
     hiddenFields: ["hiddenfields", "donotprint", "dontprint"],
     pod: ["pod", "podname"],
+    podCaptain: ["podcaptain", "captain"],
     notes: ["notes", "organizernotes"],
   };
   const keyOf = (h) => `${h.names}|${h.address}|${h.unit}`.toLowerCase().replace(/[^a-z0-9|]/g, "");
   const truthy = (v) => /^(y|yes|true|1|x|✓|✔|consented|agreed)$/i.test(String(v).trim());
 
   function importCSVText(text) {
-    const rows = parseCSV(text);
-    if (rows.length < 2) throw new Error("The spreadsheet has no data rows.");
-    const norm = (h) => h.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const norm = (h) => String(h).toLowerCase().replace(/[^a-z0-9]/g, "");
+    // Split into sections at "## Title" rows. Rows before the first marker are households.
+    const sections = { households: [] };
+    let cur = sections.households;
+    for (const r of parseCSV(text)) {
+      const first = (r[0] || "").trim();
+      if (first.startsWith("##")) {
+        const key = norm(first.slice(2));
+        cur = sections[key] = [];
+      } else cur.push(r);
+    }
+    const rows = sections.households;
+    const extras = readCSVExtras(sections, norm);
+    if (rows.length < 2 && !extras) throw new Error("The spreadsheet has no data rows.");
+    if (rows.length < 2) return mergeHouseholds([], "spreadsheet", extras);
     const header = rows[0].map(norm);
     const col = {};
     for (const [field, aliases] of Object.entries(CSV_ALIASES)) {
@@ -997,14 +1037,37 @@
         };
       }
       rec._pod = get("pod");
+      rec._captain = get("podCaptain");
       return rec;
     }).filter((rec) => rec.names || rec.address);
-    if (!records.length) throw new Error("No rows with a name or address were found.");
-    mergeHouseholds(records, "spreadsheet");
+    if (!records.length && !extras) throw new Error("No rows with a name or address were found.");
+    mergeHouseholds(records, "spreadsheet", extras);
+  }
+
+  // Settings, important numbers and pod list from the CSV's labeled sections (each has a header row first).
+  function readCSVExtras(sections, norm) {
+    const body = (rows) => (rows || []).slice(1).filter((r) => r.some((v) => v.trim()));
+    const extras = {};
+    if (sections.settings) {
+      const byLabel = Object.fromEntries(CSV_SETTINGS.flatMap(([k, label]) => [[norm(label), k], [norm(k), k]]));
+      extras.settings = {};
+      body(sections.settings).forEach(([label = "", value = ""]) => {
+        const k = byLabel[norm(label)];
+        if (!k) return;
+        extras.settings[k] = k === "podSize" ? Math.max(2, Math.min(12, parseInt(value, 10) || 5)) : value.trim();
+      });
+    }
+    if (sections.importantnumbers || sections.numbers) {
+      extras.numbers = body(sections.importantnumbers || sections.numbers)
+        .map(([label = "", number = ""]) => ({ label: label.trim(), number: number.trim() }))
+        .filter((n) => n.label || n.number);
+    }
+    if (sections.pods) extras.pods = body(sections.pods).map(([name = ""]) => name.trim()).filter(Boolean);
+    return Object.keys(extras).length ? extras : null;
   }
 
   // Add new households; update existing ones that have the same name + address + unit.
-  function mergeHouseholds(records, what) {
+  function mergeHouseholds(records, what, extras = null) {
     const byKey = new Map(state.households.map((h) => [keyOf(h), h]));
     let added = 0, updated = 0;
     const plan = records.map((rec) => {
@@ -1012,8 +1075,17 @@
       existing ? updated++ : added++;
       return { rec, existing };
     });
+    const also = [];
+    if (extras?.settings) also.push("neighborhood settings");
+    if (extras?.numbers) also.push(`important numbers (${extras.numbers.length}, replacing the current list)`);
+    if (extras?.pods) also.push(`pod list (${extras.pods.length})`);
     if (!confirm(`Import ${records.length} household${records.length === 1 ? "" : "s"} from this ${what}?\n\n` +
-      `• ${added} new\n• ${updated} matching name & address (will be updated)\n\nNothing else will be removed.`)) return;
+      `• ${added} new\n• ${updated} matching name & address (will be updated)` +
+      (also.length ? `\n• Also: ${also.join(", ")}` : "") +
+      `\n\nNo households will be removed.`)) return;
+
+    if (extras?.settings) Object.assign(state.settings, extras.settings);
+    if (extras?.numbers) state.settings.numbers = extras.numbers;
 
     const podFor = (name) => {
       if (!name) return null;
@@ -1021,8 +1093,9 @@
       if (!p) { p = { id: uid(), name: name.trim(), captainId: null }; state.pods.push(p); }
       return p.id;
     };
+    extras?.pods?.forEach(podFor); // creates listed pods (incl. empty ones) in file order
     plan.forEach(({ rec, existing }) => {
-      const { _pod, consent, ...fields } = rec;
+      const { _pod, _captain, consent, ...fields } = rec;
       const base = existing || normalizeHousehold({});
       const merged = { ...base, ...fields, updatedAt: new Date().toISOString() };
       if (consent) {
@@ -1038,6 +1111,9 @@
       if (!h.consent.given) h.podId = null;
       if (existing) Object.assign(existing, h);
       else { state.households.push(h); byKey.set(keyOf(h), h); }
+      // A captain must belong to the pod they lead
+      state.pods.forEach((p) => { if (p.captainId === h.id && (p.id !== h.podId || (_captain !== undefined && !truthy(_captain)))) p.captainId = null; });
+      if (_captain !== undefined && truthy(_captain) && h.podId) state.pods.find((p) => p.id === h.podId).captainId = h.id;
     });
     save(); render();
     toast(`Imported: ${added} added, ${updated} updated`);
