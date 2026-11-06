@@ -163,7 +163,12 @@
           <h1>Directory</h1>
           <p class="muted">${hs.length} household${hs.length === 1 ? "" : "s"} · ${consented} consented to be listed</p>
         </div>
-        <button class="btn primary" data-act="add">+ Add household</button>
+        <div class="btn-row">
+          <label class="btn" title="Restore a .json backup, or add/update households from a .csv spreadsheet">Import…<input type="file" class="import-file" accept=".csv,.json,text/csv,application/json" hidden></label>
+          ${hs.length ? `<button class="btn" data-act="export-csv">Export .csv</button>
+          <button class="btn" data-act="export-json">Export backup .json</button>` : ""}
+          <button class="btn primary" data-act="add">+ Add household</button>
+        </div>
       </section>
       ${hs.length === 0 ? emptyDirectory() : `
       <section class="toolbar">
@@ -203,6 +208,7 @@
           <li>Group households into check-in <a href="#/pods">pods</a> of about 5.</li>
           <li>Print the finished booklet for every household that took part.</li>
         </ol>
+        <p>Already have data? Use <strong>Import…</strong> above to restore a <code>.json</code> backup or load a <code>.csv</code> spreadsheet you exported earlier.</p>
         <p><button class="btn" data-act="sample">Load 12 sample neighbors to try it out</button></p>
       </div>`;
   }
@@ -824,9 +830,11 @@
         <h2>Your data</h2>
         <p>Everything is stored <strong>only in this browser</strong> on this device. Nothing is uploaded anywhere.
         Export a backup regularly, and use it to move the directory to another computer or hand it to a co-organizer.</p>
+        <p class="muted small">A <strong>.json backup</strong> restores everything (households, pods and settings) and replaces what's here.
+        A <strong>.csv spreadsheet</strong> adds households, and updates any with the same name and address.</p>
         <div class="btn-row">
           <button class="btn primary" data-act="export-json">Export backup (.json)</button>
-          <label class="btn">Import backup…<input type="file" id="import" accept="application/json,.json" hidden></label>
+          <label class="btn">Import .json or .csv…<input type="file" class="import-file" accept=".csv,.json,text/csv,application/json" hidden></label>
           <button class="btn" data-act="export-csv">Export spreadsheet (.csv)</button>
         </div>
         <h3>Danger zone</h3>
@@ -849,7 +857,6 @@
       if (b.dataset.act === "add-num") { collect(); s.numbers.push({ label: "", number: "" }); save(); renderSettings(); }
       if (b.dataset.act === "del-num") { collect(); s.numbers.splice(+b.dataset.i, 1); save(); renderSettings(); }
     });
-    $("#import").addEventListener("change", importJSON);
   }
 
   function download(name, text, type) {
@@ -868,39 +875,248 @@
     toast("Backup downloaded");
   }
 
+  // Settings stored in the CSV's "## Settings" section: [state key, label in the file]
+  const CSV_SETTINGS = [
+    ["name", "Neighborhood name"],
+    ["meetingPoint", "Meeting point"],
+    ["organizer", "Organizer"],
+    ["organizerContact", "Organizer contact"],
+    ["podSize", "Households per pod"],
+  ];
+
+  // The CSV holds everything the .json backup does: households (one row each),
+  // then labeled sections for settings, important numbers and the pod list.
   function exportCSV() {
-    const cols = ["names", "address", "unit", "phone", "phone2", "email", "occupation", "household", "skills", "resources", "needs", "pets", "consent", "consentDate", "signedBy", "pod", "notes"];
+    const cols = ["names", "address", "unit", "phone", "phone2", "email", "occupation", "household", "skills", "resources", "needs", "pets", "consent", "consentDate", "signedBy", "hiddenFields", "pod", "podCaptain", "notes"];
     const cell = (v) => {
       const s = String(v ?? "");
-      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+      return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
-    const rows = state.households.slice().sort(byAddress).map((h) => [
+    const line = (arr) => arr.map(cell).join(",");
+    // Pods are matched by name on import, so give every pod a distinct name in the file
+    const podNames = new Map(), seen = new Set();
+    state.pods.forEach((p, i) => {
+      const base = p.name || `Pod ${i + 1}`;
+      let name = base, n = 2;
+      while (seen.has(name.toLowerCase())) name = `${base} (${n++})`;
+      seen.add(name.toLowerCase()); podNames.set(p.id, name);
+    });
+    const podOf = (h) => state.pods.find((p) => p.id === h.podId);
+    const lines = [line(cols), ...state.households.slice().sort(byAddress).map((h) => line([
       h.names, h.address, h.unit, h.phone, h.phone2, h.email, h.occupation, h.household,
       h.skills.join("; "), h.resources.join("; "), h.needs, h.pets,
       h.consent.given ? "yes" : "no", h.consent.date, h.consent.signedBy,
-      state.pods.find((p) => p.id === h.podId)?.name || "", h.notes,
-    ].map(cell).join(","));
-    download(`mini-yellow-pages-${slug()}-${today()}.csv`, [cols.join(","), ...rows].join("\n"), "text/csv");
+      SHARE_FIELDS.filter(([k]) => !h.consent.share[k]).map(([k]) => k).join("; "),
+      podNames.get(h.podId) || "", podOf(h)?.captainId === h.id ? "yes" : "", h.notes,
+    ]))];
+    lines.push("", "## Settings", line(["setting", "value"]),
+      ...CSV_SETTINGS.map(([k, label]) => line([label, state.settings[k]])));
+    lines.push("", "## Important numbers", line(["label", "number"]),
+      ...state.settings.numbers.map((n) => line([n.label, n.number])));
+    lines.push("", "## Pods", line(["pod"]),
+      ...state.pods.map((p) => line([podNames.get(p.id)])));
+    download(`mini-yellow-pages-${slug()}-${today()}.csv`, lines.join("\n"), "text/csv");
     toast("Spreadsheet downloaded");
   }
 
-  function importJSON(e) {
-    const file = e.target.files[0];
+  // ---------- Import (.json backup or .csv spreadsheet) ----------
+  function importFile(file) {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
+      const text = String(reader.result || "").replace(/^﻿/, "");
+      const isJSON = /\.json$/i.test(file.name) || /^\s*[[{]/.test(text);
       try {
-        const data = JSON.parse(reader.result);
-        if (!data || !Array.isArray(data.households)) throw new Error("not a backup");
-        if (!confirm(`Replace the current data with this backup (${data.households.length} households)?`)) return;
-        state = migrate(data);
-        save(); render(); toast("Backup imported");
-      } catch {
-        alert("That file doesn't look like a Mini Yellow Pages backup.");
+        if (isJSON) importJSONText(text);
+        else importCSVText(text);
+      } catch (err) {
+        alert(`Couldn't import "${file.name}". ${err.message || ""}`.trim());
       }
     };
+    reader.onerror = () => alert(`Couldn't read "${file.name}".`);
     reader.readAsText(file);
-    e.target.value = "";
+  }
+
+  function importJSONText(text) {
+    let data;
+    try { data = JSON.parse(text); } catch { throw new Error("The file isn't valid JSON."); }
+    if (Array.isArray(data)) return mergeHouseholds(data.map(normalizeHousehold), "file");
+    if (!data || !Array.isArray(data.households)) throw new Error("It doesn't look like a Mini Yellow Pages backup.");
+    if (state.households.length &&
+        !confirm(`Replace everything here (${state.households.length} households, pods and settings) with this backup (${data.households.length} households)?\n\nTip: export a backup of the current data first if you might need it.`)) return;
+    state = migrate(data);
+    save(); render(); toast(`Backup restored: ${state.households.length} households`);
+  }
+
+  // RFC 4180-style CSV parser (quoted fields, escaped quotes, newlines inside quotes)
+  function parseCSV(text) {
+    const rows = [];
+    let row = [], field = "", i = 0, quoted = false;
+    const delim = (text.split("\n")[0].match(/\t/g) || []).length > (text.split("\n")[0].match(/,/g) || []).length ? "\t" : ",";
+    while (i < text.length) {
+      const c = text[i];
+      if (quoted) {
+        if (c === '"') {
+          if (text[i + 1] === '"') { field += '"'; i++; } else quoted = false;
+        } else field += c;
+      } else if (c === '"') quoted = true;
+      else if (c === delim) { row.push(field); field = ""; }
+      else if (c === "\n" || c === "\r") {
+        if (c === "\r" && text[i + 1] === "\n") i++;
+        row.push(field); rows.push(row); row = []; field = "";
+      } else field += c;
+      i++;
+    }
+    if (field !== "" || row.length) { row.push(field); rows.push(row); }
+    return rows.filter((r) => r.some((v) => v.trim() !== ""));
+  }
+
+  const CSV_ALIASES = {
+    names: ["names", "name", "fullname", "householdname", "family"],
+    address: ["address", "streetaddress", "street", "addr"],
+    unit: ["unit", "apt", "apartment", "suite"],
+    phone: ["phone", "phonenumber", "mobile", "cell", "telephone", "phone1"],
+    phone2: ["phone2", "otherphone", "secondphone", "altphone"],
+    email: ["email", "emailaddress", "e-mail"],
+    occupation: ["occupation", "occupations", "job", "work", "profession"],
+    household: ["household", "householdmembers", "members"],
+    skills: ["skills", "skill"],
+    resources: ["resources", "equipment", "has"],
+    needs: ["needs", "specialneeds"],
+    pets: ["pets", "pet"],
+    consent: ["consent", "consented", "consentgiven"],
+    consentDate: ["consentdate", "dateofconsent"],
+    signedBy: ["signedby", "givenby"],
+    hiddenFields: ["hiddenfields", "donotprint", "dontprint"],
+    pod: ["pod", "podname"],
+    podCaptain: ["podcaptain", "captain"],
+    notes: ["notes", "organizernotes"],
+  };
+  const keyOf = (h) => `${h.names}|${h.address}|${h.unit}`.toLowerCase().replace(/[^a-z0-9|]/g, "");
+  const truthy = (v) => /^(y|yes|true|1|x|✓|✔|consented|agreed)$/i.test(String(v).trim());
+
+  function importCSVText(text) {
+    const norm = (h) => String(h).toLowerCase().replace(/[^a-z0-9]/g, "");
+    // Split into sections at "## Title" rows. Rows before the first marker are households.
+    const sections = { households: [] };
+    let cur = sections.households;
+    for (const r of parseCSV(text)) {
+      const first = (r[0] || "").trim();
+      if (first.startsWith("##")) {
+        const key = norm(first.slice(2));
+        cur = sections[key] = [];
+      } else cur.push(r);
+    }
+    const rows = sections.households;
+    const extras = readCSVExtras(sections, norm);
+    if (rows.length < 2 && !extras) throw new Error("The spreadsheet has no data rows.");
+    if (rows.length < 2) return mergeHouseholds([], "spreadsheet", extras);
+    const header = rows[0].map(norm);
+    const col = {};
+    for (const [field, aliases] of Object.entries(CSV_ALIASES)) {
+      const idx = header.findIndex((h) => aliases.map(norm).includes(h));
+      if (idx >= 0) col[field] = idx;
+    }
+    if (col.names === undefined && col.address === undefined) {
+      throw new Error('The first row needs column headings, including at least "names" or "address".');
+    }
+    const records = rows.slice(1).map((r) => {
+      const get = (f) => (col[f] === undefined ? undefined : (r[col[f]] ?? "").trim());
+      const rec = {};
+      ["names", "address", "unit", "phone", "phone2", "email", "occupation", "household", "needs", "pets", "notes"]
+        .forEach((f) => { if (get(f) !== undefined) rec[f] = get(f); });
+      ["skills", "resources"].forEach((f) => { if (get(f) !== undefined) rec[f] = uniq(get(f).split(/[;,]/).map((x) => x.trim()).filter(Boolean)); });
+      if (get("consent") !== undefined || get("consentDate") !== undefined || get("signedBy") !== undefined || get("hiddenFields") !== undefined) {
+        const hidden = (get("hiddenFields") || "").toLowerCase();
+        rec.consent = {
+          given: get("consent") !== undefined ? truthy(get("consent")) : undefined,
+          date: get("consentDate"),
+          signedBy: get("signedBy"),
+          share: get("hiddenFields") !== undefined
+            ? Object.fromEntries(SHARE_FIELDS.map(([k]) => [k, !hidden.includes(k)])) : undefined,
+        };
+      }
+      rec._pod = get("pod");
+      rec._captain = get("podCaptain");
+      return rec;
+    }).filter((rec) => rec.names || rec.address);
+    if (!records.length && !extras) throw new Error("No rows with a name or address were found.");
+    mergeHouseholds(records, "spreadsheet", extras);
+  }
+
+  // Settings, important numbers and pod list from the CSV's labeled sections (each has a header row first).
+  function readCSVExtras(sections, norm) {
+    const body = (rows) => (rows || []).slice(1).filter((r) => r.some((v) => v.trim()));
+    const extras = {};
+    if (sections.settings) {
+      const byLabel = Object.fromEntries(CSV_SETTINGS.flatMap(([k, label]) => [[norm(label), k], [norm(k), k]]));
+      extras.settings = {};
+      body(sections.settings).forEach(([label = "", value = ""]) => {
+        const k = byLabel[norm(label)];
+        if (!k) return;
+        extras.settings[k] = k === "podSize" ? Math.max(2, Math.min(12, parseInt(value, 10) || 5)) : value.trim();
+      });
+    }
+    if (sections.importantnumbers || sections.numbers) {
+      extras.numbers = body(sections.importantnumbers || sections.numbers)
+        .map(([label = "", number = ""]) => ({ label: label.trim(), number: number.trim() }))
+        .filter((n) => n.label || n.number);
+    }
+    if (sections.pods) extras.pods = body(sections.pods).map(([name = ""]) => name.trim()).filter(Boolean);
+    return Object.keys(extras).length ? extras : null;
+  }
+
+  // Add new households; update existing ones that have the same name + address + unit.
+  function mergeHouseholds(records, what, extras = null) {
+    const byKey = new Map(state.households.map((h) => [keyOf(h), h]));
+    let added = 0, updated = 0;
+    const plan = records.map((rec) => {
+      const existing = byKey.get(keyOf({ names: rec.names || "", address: rec.address || "", unit: rec.unit || "" }));
+      existing ? updated++ : added++;
+      return { rec, existing };
+    });
+    const also = [];
+    if (extras?.settings) also.push("neighborhood settings");
+    if (extras?.numbers) also.push(`important numbers (${extras.numbers.length}, replacing the current list)`);
+    if (extras?.pods) also.push(`pod list (${extras.pods.length})`);
+    if (!confirm(`Import ${records.length} household${records.length === 1 ? "" : "s"} from this ${what}?\n\n` +
+      `• ${added} new\n• ${updated} matching name & address (will be updated)` +
+      (also.length ? `\n• Also: ${also.join(", ")}` : "") +
+      `\n\nNo households will be removed.`)) return;
+
+    if (extras?.settings) Object.assign(state.settings, extras.settings);
+    if (extras?.numbers) state.settings.numbers = extras.numbers;
+
+    const podFor = (name) => {
+      if (!name) return null;
+      let p = state.pods.find((x) => x.name.trim().toLowerCase() === name.trim().toLowerCase());
+      if (!p) { p = { id: uid(), name: name.trim(), captainId: null }; state.pods.push(p); }
+      return p.id;
+    };
+    extras?.pods?.forEach(podFor); // creates listed pods (incl. empty ones) in file order
+    plan.forEach(({ rec, existing }) => {
+      const { _pod, _captain, consent, ...fields } = rec;
+      const base = existing || normalizeHousehold({});
+      const merged = { ...base, ...fields, updatedAt: new Date().toISOString() };
+      if (consent) {
+        merged.consent = {
+          given: consent.given ?? base.consent.given,
+          date: consent.date ?? base.consent.date,
+          signedBy: consent.signedBy ?? base.consent.signedBy,
+          share: consent.share ?? base.consent.share,
+        };
+      }
+      if (_pod !== undefined) merged.podId = podFor(_pod);
+      const h = normalizeHousehold(merged);
+      if (!h.consent.given) h.podId = null;
+      if (existing) Object.assign(existing, h);
+      else { state.households.push(h); byKey.set(keyOf(h), h); }
+      // A captain must belong to the pod they lead
+      state.pods.forEach((p) => { if (p.captainId === h.id && (p.id !== h.podId || (_captain !== undefined && !truthy(_captain)))) p.captainId = null; });
+      if (_captain !== undefined && truthy(_captain) && h.podId) state.pods.find((p) => p.id === h.podId).captainId = h.id;
+    });
+    save(); render();
+    toast(`Imported: ${added} added, ${updated} updated`);
   }
 
   function addSamples() {
@@ -946,6 +1162,12 @@
         state = blankState(); save(); render(); toast("All data erased");
         break;
     }
+  });
+
+  document.addEventListener("change", (e) => {
+    if (!e.target.matches(".import-file")) return;
+    importFile(e.target.files[0]);
+    e.target.value = "";
   });
 
   render();

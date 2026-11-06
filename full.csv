@@ -1,0 +1,41 @@
+names,address,unit,phone,phone2,email,occupation,household,skills,resources,needs,pets,consent,consentDate,signedBy,hiddenFields,pod,podCaptain,notes
+Chris Ward,15 Elm Ave,,555-0107,,,Arborist,,Tree work / Chainsaw,Chainsaw; Ladder,,,yes,2026-11-06,Chris Ward,,Oak North,yes,Sample entry
+Linda & Paul Okafor,21 Elm Ave,,555-0108,,okafors@example.com,Physician; accountant,,Doctor,Generator,Paul uses oxygen (needs power),,yes,2026-11-06,Linda & Paul Okafor,,Oak North,,Sample entry
+Hannah Kim,27 Elm Ave,,555-0109,,,Social worker,,Mental health; Elder care,,,,yes,2026-11-06,Hannah Kim,,Oak North,,Sample entry
+Jamal Carter,33 Elm Ave,,555-0110,,,Plumber,,Plumber; Gas / HVAC,Shut-off wrench; Tent / tarps,,,yes,2026-11-06,Jamal Carter,,Oak North,,Sample entry
+The Russo family,39 Elm Ave,,555-0111,,,Firefighter,,Firefighter; Search & rescue,Fire extinguisher; Pool / large water source,,2 dogs,yes,2026-11-06,The Russo family,,Pod 2 · Elm Ave / Oak St,,Sample entry
+Mei Chen,45 Elm Ave,,555-0112,,,Pharmacist,,Mandarin; Cantonese,,,,yes,2026-11-06,Mei Chen,,Pod 2 · Elm Ave / Oak St,,Sample entry
+Maria & Tom Alvarez,112 Oak St,,555-0101,,maria.a@example.com,ER nurse; contractor,,Nurse; CPR / First aid; Carpenter / Handyperson; Spanish,Generator; Ladder,,,yes,2026-11-06,Maria & Tom Alvarez,,Pod 2 · Elm Ave / Oak St,,Sample entry
+Dev Patel,118 Oak St,,555-0102,,,Software engineer,,Ham radio operator; IT / Networking,Solar charger / power bank; Two-way radios,,,yes,2026-11-06,Dev Patel,phone; needs,Pod 2 · Elm Ave / Oak St,yes,Sample entry
+The Nguyen family,124 Oak St,,555-0103,,nguyenfam@example.com,Restaurant owner,,Cooking for groups; Vietnamese,Camp stove; Stored water,Infant at home,,yes,2026-11-06,The Nguyen family,,Pod 3 · Oak St,,Sample entry
+Ruth Goldberg,130 Oak St,,555-0104,,,Retired teacher,,Childcare,,Lives alone; uses a walker,,yes,2026-11-06,Ruth Goldberg,,Pod 3 · Oak St,,Sample entry
+Sam & Jordan Lee,136 Oak St,,555-0105,,leehouse@example.com,Electrician; vet tech,,Electrician; Veterinary,Truck / trailer; Shut-off wrench,,,yes,2026-11-06,Sam & Jordan Lee,,Pod 3 · Oak St,yes,Sample entry
+Aisha Bello,142 Oak St,,555-0106,,,Paramedic,,EMT / Paramedic; CERT trained,Extra first-aid kit; AED,,,yes,2026-11-06,Aisha Bello,,Pod 3 · Oak St,,Sample entry
+Pending Neighbor,150 Oak St,,,,,,,,,,,no,2026-11-06,,,,,"Knocked twice,
+ask again ""Saturday"""
+
+## Settings
+setting,value
+Neighborhood name,Oak & Elm Neighbors
+Meeting point,Corner of Oak & Elm by the mailbox
+Organizer,"Jing ""JY"" Fan"
+Organizer contact,"555-0000, jy@example.com"
+Households per pod,4
+
+## Important numbers
+label,number
+Emergency (police / fire / medical),911
+Poison Control,1-800-222-1222
+988 Suicide & Crisis Lifeline,988
+Police non-emergency,555-7777
+Gas utility (leaks),
+Electric utility (outages),
+Water utility,
+Block captain hotline,555-8888
+
+## Pods
+pod
+Oak North
+Pod 2 · Elm Ave / Oak St
+Pod 3 · Oak St
+Pod 4
