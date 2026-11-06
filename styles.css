@@ -337,3 +337,52 @@ fieldset.consent { background: var(--yellow-soft); border-color: var(--yellow); 
   .sign { min-height: 9.5in; }
   .street, .cover-mark, .ok-sign div, .help-sign div, .sheet-title { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+/* ---- map ---- */
+label .hint { font-weight: 400; margin: 0; }
+.map-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 1rem; align-items: start; }
+.map-screen {
+  height: min(70vh, 640px); border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--surface); overflow: hidden; position: relative; z-index: 0;
+}
+.map-screen.placing, .map-screen.placing .leaflet-container { cursor: crosshair; }
+.map-msg { padding: 1rem; margin: 0; }
+.map-side h3 { margin: .25rem 0 .5rem; font-size: 1.05rem; }
+.map-side .members.flat { padding: 0 .75rem; margin-bottom: 1rem; }
+.map-side .members li { padding: .45rem 0; }
+.placing-bar {
+  display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: center;
+  background: var(--yellow-soft); border: 1px solid var(--yellow); border-radius: var(--radius);
+  padding: .5rem .9rem; margin-bottom: .75rem;
+}
+.leaflet-container { font: 13px/1.4 var(--sans); }
+.leaflet-popup-content { color: #111; }
+.flag-icon { background: none; border: 0; }
+.flag {
+  position: absolute; left: 0; top: 0; width: 28px; height: 28px;
+  background: var(--c); border: 2px solid #fff; border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg); box-shadow: 0 1px 3px rgba(0,0,0,.45);
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+.flag b { display: grid; place-items: center; width: 100%; height: 100%; transform: rotate(45deg); color: #fff; font: 700 12px/1 var(--sans); }
+.flag.muted { opacity: .75; }
+.pod-legend { display: flex; flex-wrap: wrap; gap: .3rem .9rem; font-size: .85rem; margin: .5rem 0; }
+.pod-legend span, .map-legend li { display: flex; align-items: center; gap: .35rem; }
+.pod-legend i, .map-legend i {
+  display: inline-block; width: .8rem; height: .8rem; border-radius: 50%; background: var(--c); flex-shrink: 0;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+.map-print { width: 100%; max-width: 7.2in; height: 6.3in; margin: 0 auto; border: 1.5px solid #111; position: relative; z-index: 0; }
+.map-print .leaflet-control-zoom { display: none; }
+.map-legend { columns: 2; column-gap: .3in; list-style: none; padding: 0; margin: .5rem 0; font-size: 9pt; }
+.map-legend li { break-inside: avoid; margin-bottom: .15rem; }
+.map-legend b { min-width: 1.4em; text-align: right; }
+@media (max-width: 800px) {
+  .map-wrap { grid-template-columns: 1fr; }
+  .map-print { height: 4.5in; }
+  .map-legend { columns: 1; }
+}
+@media print {
+  .map-print { width: 7.2in; height: 6.3in; }
+  .map-sheet .pod-legend, .map-sheet .map-legend { font-size: 9pt; }
+}
