@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mini Yellow Pages</title>
+  <meta name="description" content="A neighborhood directory and emergency-preparedness organizer.">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar no-print">
+    <a class="brand" href="#/directory">
+      <span class="brand-mark">MYP</span>
+      <span class="brand-text">
+        <strong>Mini Yellow Pages</strong>
+        <small id="hood-name">Your neighborhood</small>
+      </span>
+    </a>
+    <nav class="tabs" id="tabs">
+      <a href="#/directory" data-route="directory">Directory</a>
+      <a href="#/pods" data-route="pods">Pods</a>
+      <a href="#/prepare" data-route="prepare">Prepare</a>
+      <a href="#/print" data-route="print">Print</a>
+      <a href="#/settings" data-route="settings">Settings &amp; data</a>
+    </nav>
+  </header>
+
+  <main id="view"></main>
+
+  <dialog id="editor" class="no-print"></dialog>
+  <div id="toast" class="toast no-print" role="status" aria-live="polite"></div>
+
+  <script src="content.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
