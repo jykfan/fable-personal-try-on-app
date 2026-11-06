@@ -9,7 +9,9 @@ A neighborhood directory and emergency-preparedness organizer. Collect your neig
 - **Pods**: Auto-assign consenting households into pods of up to 5 (configurable) by street and house number, so pod members are next-door neighbors. You can rename pods, pick a captain, and move households by hand.
 - **Prepare**: Guides for shutting off gas, water, and electricity; generators; earthquakes; wildfire evacuation; household plans; and the pod check-in protocol. Also an interactive go-bag checklist and important phone numbers.
 - **Print**: A print-ready booklet (letter size) you can configure. It has a cover with important numbers, a directory grouped by street, a skills and resources index, pod check-off sheets, the guides, the go-bag checklist, OK/HELP window signs, and **blank sign-up and consent forms** to take door to door.
-- **Data**: Export/import a JSON backup and export a CSV spreadsheet.
+- **Import & export** (Directory tab or Settings):
+  - **.json backup**: restores everything (households, pods, settings) and replaces the current data.
+  - **.csv spreadsheet**: adds households and updates any with the same name and address. Nothing is deleted. It accepts the app's own CSV export or your own spreadsheet. The first row must have column headings, including at least `names`/`name` or `address`. Common variations like "Street Address" and "Phone Number" are recognized, and tab-separated files work too.
 
 ## Privacy model
 
