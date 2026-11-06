@@ -53,6 +53,9 @@
         name: "",
         organizer: "",
         organizerContact: "",
+        location: "",
+        city: "",
+        center: null,
         meetingPoint: "",
         podSize: 5,
         numbers: DEFAULT_NUMBERS.map((n) => ({ ...n })),
@@ -86,6 +89,9 @@
         share: { ...share, ...(h.consent?.share || {}) },
       },
       podId: h.podId || null,
+      lat: Number.isFinite(h.lat) ? h.lat : null,
+      lon: Number.isFinite(h.lon) ? h.lon : null,
+      pin: h.pin || null, // how the map flag was placed: "exact" | "approx" | "manual"
       updatedAt: h.updatedAt || new Date().toISOString(),
     };
   }
@@ -134,7 +140,7 @@
   const fullAddress = (h) => h.address + (h.unit ? `, ${h.unit}` : "");
 
   // ---------- routing ----------
-  const routes = { directory: renderDirectory, pods: renderPods, prepare: renderPrepare, print: renderPrint, settings: renderSettings };
+  const routes = { directory: renderDirectory, pods: renderPods, map: renderMap, prepare: renderPrepare, print: renderPrint, settings: renderSettings };
   function currentRoute() {
     const r = location.hash.replace(/^#\/?/, "").split("/")[0];
     return routes[r] ? r : "directory";
@@ -363,6 +369,9 @@
         updatedAt: new Date().toISOString(),
       });
       if (!updated.consent.given) updated.podId = null;
+      if (existing && existing.address.trim().toLowerCase() !== updated.address.toLowerCase()) {
+        updated.lat = updated.lon = updated.pin = null; // address changed: find it on the map again
+      }
       if (existing) Object.assign(existing, updated);
       else state.households.push(updated);
       save(); dlg.close(); render();
@@ -574,6 +583,7 @@
     ["directory", "Directory listings", true],
     ["index", "Skills & resources index", true],
     ["pods", "Pod assignments", true],
+    ["map", "Neighborhood map", true],
     ["guides", "Emergency guides", true],
     ["gobag", "Go-bag checklist", true],
     ["signs", "OK / HELP window signs", false],
@@ -633,8 +643,10 @@
       };
       safeSet(PRINT_KEY, JSON.stringify(p));
       $("#booklet").innerHTML = bookletHTML(p);
+      drawPrintMap();
     };
     $$(".print-opts input, .print-opts select").forEach((el) => el.addEventListener("change", update));
+    drawPrintMap();
   }
 
   function bookletHTML(prefs) {
@@ -644,6 +656,7 @@
       .sort(prefs.sort === "name" ? byName : byAddress);
     const out = [];
     const P = prefs.parts;
+    const pinNo = mapNumbers();
 
     if (P.cover) out.push(`
       <section class="sheet cover">
@@ -684,7 +697,7 @@
               ${h.resources.length ? `<div><b>Has:</b> ${esc(h.resources.join(", "))}</div>` : ""}
               ${h.needs ? `<div class="needs">⚠ ${esc(h.needs)}</div>` : ""}
               ${h.pets ? `<div><b>Pets:</b> ${esc(h.pets)}</div>` : ""}
-              ${podName ? `<div class="small muted">${esc(podName)}</div>` : ""}
+              ${podName || (P.map && pinNo.get(h.id)) ? `<div class="small muted">${[podName, P.map && pinNo.get(h.id) ? `Map #${pinNo.get(h.id)}` : ""].filter(Boolean).map(esc).join(" · ")}</div>` : ""}
             </div>`;
           }).join("") : `<p>No consenting households yet.</p>`}
         </div>
@@ -737,6 +750,8 @@
         ${pods.length ? `<p class="small muted">★ = pod captain · ☐ = tick off once you've reached them</p>` : ""}
       </section>`);
     }
+
+    if (P.map) out.push(mapSheetHTML(list, pinNo));
 
     if (P.guides) out.push(`<section class="sheet guides-print"><h2 class="sheet-title">Emergency guides</h2>${GUIDES.map(guideHTML).join("")}</section>`);
 
@@ -799,6 +814,292 @@
       </section>`;
   }
 
+  // ---------- Map ----------
+  // Leaflet (map library) and map tiles load only when a map is shown.
+  // Address lookups use OpenStreetMap's Nominatim service: only the street address + city are sent.
+  const LEAFLET_CSS = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+  const LEAFLET_JS = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+  const TILES = "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
+  const TILE_ATTRIB = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
+  const GEOCODER = "https://nominatim.openstreetmap.org/search";
+  const POD_COLORS = ["#d62728", "#1f77b4", "#2ca02c", "#9467bd", "#ff7f0e", "#17becf", "#8c564b", "#e377c2", "#7f7f00", "#393b79", "#637939", "#843c39"];
+  const mapUI = { placing: null, locating: false, stop: false };
+  let screenMap = null, printMap = null;
+
+  let leafletPromise = null;
+  function loadLeaflet() {
+    if (window.L) return Promise.resolve(window.L);
+    if (leafletPromise) return leafletPromise;
+    leafletPromise = new Promise((resolve, reject) => {
+      const link = document.createElement("link");
+      link.rel = "stylesheet"; link.href = LEAFLET_CSS;
+      document.head.appendChild(link);
+      const sc = document.createElement("script");
+      sc.src = LEAFLET_JS;
+      sc.onload = () => resolve(window.L);
+      sc.onerror = () => { leafletPromise = null; link.remove(); sc.remove(); reject(new Error("Couldn't load the map. Check your internet connection.")); };
+      document.head.appendChild(sc);
+    });
+    return leafletPromise;
+  }
+
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  async function geocode(query, near) {
+    const params = new URLSearchParams({ q: query, format: "jsonv2", limit: "1", addressdetails: "1" });
+    if (near) {
+      const d = 0.1; // prefer results within ~10 km of the neighborhood
+      params.set("viewbox", [near.lon - d, near.lat + d, near.lon + d, near.lat - d].join(","));
+    }
+    const res = await fetch(`${GEOCODER}?${params}`);
+    if (res.status === 429) { const e = new Error("Too many lookups. Wait a minute and try again."); e.rate = true; throw e; }
+    if (!res.ok) throw new Error(`Address lookup failed (${res.status}).`);
+    const [hit] = await res.json();
+    if (!hit) return null;
+    return { lat: +hit.lat, lon: +hit.lon, address: hit.address || {}, exact: !!hit.address?.house_number };
+  }
+
+  let centerPromise = null;
+  function ensureCenter() {
+    if (state.settings.center) return Promise.resolve(state.settings.center);
+    if (!centerPromise) centerPromise = lookupCenter().finally(() => { centerPromise = null; });
+    return centerPromise;
+  }
+  async function lookupCenter() {
+    const s = state.settings;
+    const q = s.location || s.city;
+    if (!q) return null;
+    const r = await geocode(q);
+    if (!r) throw new Error(`Couldn't find "${q}" on the map. Check the neighborhood address in Settings.`);
+    s.center = { lat: r.lat, lon: r.lon };
+    if (!s.city) {
+      const a = r.address;
+      s.city = [a.city || a.town || a.village || a.hamlet || a.suburb, a.state, a.postcode].filter(Boolean).join(", ");
+    }
+    save();
+    return s.center;
+  }
+
+  // Map numbers: consenting households with a flag, numbered in street order
+  function mapNumbers() {
+    const m = new Map();
+    state.households.filter((h) => h.consent.given && h.lat != null).sort(byAddress).forEach((h, i) => m.set(h.id, i + 1));
+    return m;
+  }
+  function podColor(podId) {
+    const i = state.pods.findIndex((p) => p.id === podId);
+    return i < 0 ? "#444444" : POD_COLORS[i % POD_COLORS.length];
+  }
+  function flagIcon(L, label, color, muted) {
+    return L.divIcon({
+      className: "flag-icon",
+      html: `<span class="flag${muted ? " muted" : ""}" style="--c:${color}"><b>${esc(label)}</b></span>`,
+      iconSize: [28, 34], iconAnchor: [14, 34], popupAnchor: [0, -30],
+    });
+  }
+  function baseMap(L, el, opts = {}) {
+    const map = L.map(el, { scrollWheelZoom: opts.scroll ?? true, zoomSnap: 0.25 });
+    L.tileLayer(TILES, { maxZoom: 20, subdomains: "abcd", attribution: TILE_ATTRIB }).addTo(map);
+    return map;
+  }
+  function fitTo(map, pts, center) {
+    if (pts.length > 1) map.fitBounds(pts, { padding: [36, 36], maxZoom: 18 });
+    else if (pts.length === 1) map.setView(pts[0], 17);
+    else if (center) map.setView([center.lat, center.lon], 16);
+    else map.setView([39.5, -98.35], 4);
+  }
+
+  function renderMap() {
+    if (screenMap) { screenMap.map.remove(); screenMap = null; }
+    const s = state.settings;
+    const hasLocation = !!(s.location || s.city);
+    const unplaced = state.households.filter((h) => h.lat == null);
+    const placing = state.households.find((h) => h.id === mapUI.placing);
+    $("#view").innerHTML = `
+      <section class="page-head">
+        <div>
+          <h1>Neighborhood map</h1>
+          <p class="muted">Each flag is a household, numbered in street order and colored by pod. Drag a flag to move it.
+          Gray flags haven't consented and won't be printed.</p>
+        </div>
+        <a class="btn" href="#/print">Print the map…</a>
+      </section>
+      ${!hasLocation ? `<div class="empty"><h2>Where is your neighborhood?</h2>
+        <p>Enter your neighborhood address under <a href="#/settings">Settings &amp; data</a> so the map knows where to look.</p></div>` : `
+      <section class="toolbar">
+        <button class="btn primary" data-act="locate" ${unplaced.length || mapUI.locating ? "" : "disabled"}>
+          ${mapUI.locating ? "Stop finding" : unplaced.length ? `Find ${unplaced.length} household${unplaced.length === 1 ? "" : "s"} on the map` : "Everyone is on the map"}</button>
+        <span id="locate-status" class="muted small" role="status"></span>
+      </section>
+      <p class="muted small">Finding households sends only their street address and your city to OpenStreetMap's free address service (one per second).
+      No names or other details leave this browser.</p>
+      ${placing ? `<div class="placing-bar">Click the map where <strong>${esc(placing.names)}</strong> (${esc(fullAddress(placing))}) lives.
+        <button class="btn small" data-act="cancel-place">Cancel</button></div>` : ""}
+      <div class="map-wrap">
+        <div id="map" class="map-screen ${placing ? "placing" : ""}"><p class="muted map-msg">Loading map…</p></div>
+        <aside class="map-side">
+          <div id="map-legend"></div>
+          <div id="map-lists">${mapListsHTML()}</div>
+        </aside>
+      </div>`}
+    `;
+    if (hasLocation) drawScreenMap();
+  }
+
+  function mapListsHTML() {
+    const unplaced = state.households.filter((h) => h.lat == null).sort(byAddress);
+    const approx = state.households.filter((h) => h.lat != null && h.pin === "approx").sort(byAddress);
+    const item = (h, label) => `<li><div><strong>${esc(h.names)}</strong><div class="muted small">${esc(fullAddress(h))}</div></div>
+      <button class="btn small" data-act="place" data-id="${h.id}">${label}</button></li>`;
+    return (unplaced.length ? `<h3>Not on the map yet</h3><ul class="members flat">${unplaced.map((h) => item(h, "Place")).join("")}</ul>` : "") +
+      (approx.length ? `<h3>Check these</h3><p class="muted small">Only the street was found, not the exact house. Drag the flag or click "Move".</p>
+        <ul class="members flat">${approx.map((h) => item(h, "Move")).join("")}</ul>` : "");
+  }
+
+  async function drawScreenMap() {
+    const el = $("#map");
+    let L;
+    try {
+      L = await loadLeaflet();
+      await ensureCenter().catch((e) => toast(e.message));
+    } catch (e) {
+      if (el) el.innerHTML = `<p class="map-msg">${esc(e.message)}</p>`;
+      return;
+    }
+    if (!el || !el.isConnected) return;
+    el.innerHTML = "";
+    const map = baseMap(L, el);
+    const layer = L.layerGroup().addTo(map);
+    screenMap = { map, layer, L };
+    const pts = drawScreenMarkers();
+    fitTo(map, pts, state.settings.center);
+    map.on("click", (e) => {
+      const h = state.households.find((x) => x.id === mapUI.placing);
+      if (!h) return;
+      h.lat = +e.latlng.lat.toFixed(6); h.lon = +e.latlng.lng.toFixed(6); h.pin = "manual";
+      mapUI.placing = null;
+      save(); renderMap(); toast(`Placed ${h.names}`);
+    });
+  }
+
+  function drawScreenMarkers() {
+    if (!screenMap) return [];
+    const { layer, L } = screenMap;
+    layer.clearLayers();
+    const nums = mapNumbers();
+    const pts = [];
+    state.households.filter((h) => h.lat != null).sort(byAddress).forEach((h) => {
+      const n = nums.get(h.id);
+      const m = L.marker([h.lat, h.lon], {
+        icon: flagIcon(L, n ?? "", h.consent.given ? podColor(h.podId) : "#9a9a9a", !h.consent.given),
+        draggable: true, title: h.names, riseOnHover: true,
+      }).addTo(layer);
+      const podName = state.pods.find((p) => p.id === h.podId)?.name;
+      m.bindPopup(`<strong>${n ? n + ". " : ""}${esc(h.names)}</strong><br>${esc(fullAddress(h))}` +
+        (podName ? `<br><span class="muted">${esc(podName)}</span>` : "") +
+        (h.pin === "approx" ? `<br><em>Approximate: drag to the right house</em>` : ""));
+      m.on("dragend", () => {
+        const ll = m.getLatLng();
+        h.lat = +ll.lat.toFixed(6); h.lon = +ll.lng.toFixed(6); h.pin = "manual";
+        save(); toast(`Moved ${h.names}`);
+        const lists = $("#map-lists");
+        if (lists) lists.innerHTML = mapListsHTML();
+      });
+      pts.push([h.lat, h.lon]);
+    });
+    const legend = $("#map-legend");
+    if (legend) legend.innerHTML = podLegendHTML();
+    return pts;
+  }
+
+  function podLegendHTML(onlyIds) {
+    const used = state.pods.filter((p) => state.households.some((h) => h.podId === p.id && h.lat != null && h.consent.given && (!onlyIds || onlyIds.has(h.id))));
+    if (!used.length) return "";
+    return `<div class="pod-legend">${used.map((p) =>
+      `<span><i style="--c:${podColor(p.id)}"></i>${esc(p.name || "Pod")}</span>`).join("")}</div>`;
+  }
+
+  function startPlacing(id) {
+    mapUI.placing = id;
+    if (currentRoute() !== "map") location.hash = "#/map";
+    else renderMap();
+    $("#map")?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  async function locateAll() {
+    if (mapUI.locating) { mapUI.stop = true; return; }
+    const status = (t) => { const el = $("#locate-status"); if (el) el.textContent = t; };
+    mapUI.locating = true; mapUI.stop = false;
+    renderMap();
+    let found = 0, approx = 0, missed = 0;
+    try {
+      const center = await ensureCenter();
+      const s = state.settings;
+      const todo = state.households.filter((h) => h.lat == null).sort(byAddress);
+      for (let i = 0; i < todo.length && !mapUI.stop; i++) {
+        const h = todo[i];
+        status(`Looking up ${i + 1} of ${todo.length}: ${h.address}…`);
+        let r = null;
+        try {
+          r = await geocode(`${h.address}, ${s.city || s.location}`, center);
+        } catch (e) {
+          if (e.rate) { status("The address service asked us to slow down. Waiting 10 seconds…"); await sleep(10000); i--; continue; }
+          throw e;
+        }
+        if (r && state.households.includes(h) && h.lat == null) {
+          h.lat = r.lat; h.lon = r.lon; h.pin = r.exact ? "exact" : "approx";
+          r.exact ? found++ : approx++;
+          save(); drawScreenMarkers();
+          const lists = $("#map-lists");
+          if (lists) lists.innerHTML = mapListsHTML();
+        } else if (!r) missed++;
+        if (i < todo.length - 1) await sleep(1100); // Nominatim usage policy: max 1 request per second
+      }
+    } catch (e) {
+      toast(e.message);
+    }
+    mapUI.locating = false;
+    if (currentRoute() === "map") renderMap();
+    const parts = [`Found ${found + approx}`];
+    if (approx) parts.push(`${approx} only to the street. Check those`);
+    if (missed) parts.push(`${missed} not found. Use "Place"`);
+    toast(parts.join(" · "));
+  }
+
+  function mapSheetHTML(list, pinNo) {
+    const placed = list.filter((h) => pinNo.has(h.id)).sort((a, b) => pinNo.get(a.id) - pinNo.get(b.id));
+    return `
+      <section class="sheet map-sheet">
+        <h2 class="sheet-title">Neighborhood map</h2>
+        ${placed.length ? `
+          <div class="map-print" id="print-map"><p class="map-msg">Loading map…</p></div>
+          ${podLegendHTML(new Set(placed.map((h) => h.id)))}
+          <ol class="map-legend">
+            ${placed.map((h) => `<li value="${pinNo.get(h.id)}"><i style="--c:${podColor(h.podId)}"></i><b>${pinNo.get(h.id)}</b> ${esc(h.names)}, <span class="muted">${esc(fullAddress(h))}</span></li>`).join("")}
+          </ol>
+          ${state.settings.meetingPoint ? `<p class="small"><b>Meeting point:</b> ${esc(state.settings.meetingPoint)}</p>` : ""}`
+        : `<p class="muted">No households are on the map yet. Use the <a href="#/map">Map</a> tab to place them.</p>`}
+      </section>`;
+  }
+
+  async function drawPrintMap() {
+    const el = $("#print-map");
+    if (printMap) { printMap.remove(); printMap = null; }
+    if (!el) return;
+    let L;
+    try { L = await loadLeaflet(); } catch (e) { el.innerHTML = `<p class="map-msg">${esc(e.message)}</p>`; return; }
+    if (!el.isConnected) return;
+    el.innerHTML = "";
+    const map = baseMap(L, el, { scroll: false });
+    printMap = map;
+    const nums = mapNumbers();
+    const pts = [];
+    state.households.filter((h) => nums.has(h.id)).forEach((h) => {
+      L.marker([h.lat, h.lon], { icon: flagIcon(L, nums.get(h.id), podColor(h.podId)), keyboard: false, interactive: false }).addTo(map);
+      pts.push([h.lat, h.lon]);
+    });
+    fitTo(map, pts, state.settings.center);
+  }
+
   // ---------- Settings & data ----------
   function renderSettings() {
     const s = state.settings;
@@ -811,6 +1112,13 @@
           <label>Meeting point after a disaster<input name="meetingPoint" value="${esc(s.meetingPoint)}" placeholder="e.g. Corner of Oak & Elm, by the mailbox"></label>
           <label>Organizer name<input name="organizer" value="${esc(s.organizer)}"></label>
           <label>Organizer phone / email<input name="organizerContact" value="${esc(s.organizerContact)}"></label>
+        </div>
+        <h2>Location (for the map)</h2>
+        <div class="grid2">
+          <label>Neighborhood address<input name="location" value="${esc(s.location)}" placeholder="e.g. 100 Oak St, Springfield, IL 62701">
+            <span class="hint">A central address or intersection. The map is centered here.</span></label>
+          <label>City, state &amp; ZIP<input name="city" value="${esc(s.city)}" placeholder="e.g. Springfield, IL 62701">
+            <span class="hint">Added to each neighbor's street address to find it on the map. Filled in for you if left blank.</span></label>
         </div>
         <h2>Important numbers</h2>
         <p class="muted small">Printed on the booklet cover. Leave a number blank to hide that line.</p>
@@ -847,7 +1155,9 @@
     const form = $("#settings-form");
     const collect = () => {
       const fd = new FormData(form);
-      ["name", "meetingPoint", "organizer", "organizerContact"].forEach((k) => (s[k] = (fd.get(k) || "").toString().trim()));
+      const oldLocation = s.location;
+      ["name", "meetingPoint", "organizer", "organizerContact", "location", "city"].forEach((k) => (s[k] = (fd.get(k) || "").toString().trim()));
+      if (s.location !== oldLocation) s.center = null; // re-center the map on the new address
       s.numbers = s.numbers.map((_, i) => ({ label: (fd.get("nl" + i) || "").toString().trim(), number: (fd.get("nn" + i) || "").toString().trim() }));
     };
     form.addEventListener("submit", (e) => { e.preventDefault(); collect(); save(); render(); toast("Settings saved"); });
@@ -882,12 +1192,15 @@
     ["organizer", "Organizer"],
     ["organizerContact", "Organizer contact"],
     ["podSize", "Households per pod"],
+    ["location", "Neighborhood address"],
+    ["city", "City, state & ZIP"],
+    ["center", "Map center"],
   ];
 
   // The CSV holds everything the .json backup does: households (one row each),
   // then labeled sections for settings, important numbers and the pod list.
   function exportCSV() {
-    const cols = ["names", "address", "unit", "phone", "phone2", "email", "occupation", "household", "skills", "resources", "needs", "pets", "consent", "consentDate", "signedBy", "hiddenFields", "pod", "podCaptain", "notes"];
+    const cols = ["names", "address", "unit", "phone", "phone2", "email", "occupation", "household", "skills", "resources", "needs", "pets", "consent", "consentDate", "signedBy", "hiddenFields", "pod", "podCaptain", "lat", "lon", "pin", "notes"];
     const cell = (v) => {
       const s = String(v ?? "");
       return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -907,10 +1220,12 @@
       h.skills.join("; "), h.resources.join("; "), h.needs, h.pets,
       h.consent.given ? "yes" : "no", h.consent.date, h.consent.signedBy,
       SHARE_FIELDS.filter(([k]) => !h.consent.share[k]).map(([k]) => k).join("; "),
-      podNames.get(h.podId) || "", podOf(h)?.captainId === h.id ? "yes" : "", h.notes,
+      podNames.get(h.podId) || "", podOf(h)?.captainId === h.id ? "yes" : "",
+      h.lat ?? "", h.lon ?? "", h.lat != null ? h.pin || "" : "", h.notes,
     ]))];
     lines.push("", "## Settings", line(["setting", "value"]),
-      ...CSV_SETTINGS.map(([k, label]) => line([label, state.settings[k]])));
+      ...CSV_SETTINGS.map(([k, label]) => line([label,
+        k === "center" ? (state.settings.center ? `${state.settings.center.lat}, ${state.settings.center.lon}` : "") : state.settings[k]])));
     lines.push("", "## Important numbers", line(["label", "number"]),
       ...state.settings.numbers.map((n) => line([n.label, n.number])));
     lines.push("", "## Pods", line(["pod"]),
@@ -990,6 +1305,9 @@
     hiddenFields: ["hiddenfields", "donotprint", "dontprint"],
     pod: ["pod", "podname"],
     podCaptain: ["podcaptain", "captain"],
+    lat: ["lat", "latitude"],
+    lon: ["lon", "lng", "long", "longitude"],
+    pin: ["pin", "pinsource"],
     notes: ["notes", "organizernotes"],
   };
   const keyOf = (h) => `${h.names}|${h.address}|${h.unit}`.toLowerCase().replace(/[^a-z0-9|]/g, "");
@@ -1036,6 +1354,13 @@
             ? Object.fromEntries(SHARE_FIELDS.map(([k]) => [k, !hidden.includes(k)])) : undefined,
         };
       }
+      if (get("lat") !== undefined && get("lon") !== undefined) {
+        const lat = parseFloat(get("lat")), lon = parseFloat(get("lon"));
+        const ok = Number.isFinite(lat) && Number.isFinite(lon);
+        rec.lat = ok ? lat : null;
+        rec.lon = ok ? lon : null;
+        rec.pin = ok ? (["exact", "approx", "manual"].includes(get("pin")) ? get("pin") : "manual") : null;
+      }
       rec._pod = get("pod");
       rec._captain = get("podCaptain");
       return rec;
@@ -1054,7 +1379,11 @@
       body(sections.settings).forEach(([label = "", value = ""]) => {
         const k = byLabel[norm(label)];
         if (!k) return;
-        extras.settings[k] = k === "podSize" ? Math.max(2, Math.min(12, parseInt(value, 10) || 5)) : value.trim();
+        if (k === "podSize") extras.settings[k] = Math.max(2, Math.min(12, parseInt(value, 10) || 5));
+        else if (k === "center") {
+          const [lat, lon] = value.split(",").map(parseFloat);
+          extras.settings.center = Number.isFinite(lat) && Number.isFinite(lon) ? { lat, lon } : null;
+        } else extras.settings[k] = value.trim();
       });
     }
     if (sections.importantnumbers || sections.numbers) {
@@ -1154,6 +1483,9 @@
       }
       case "reset-gobag": safeSet(GOBAG_KEY, "{}"); renderPrepare(); break;
       case "print": window.print(); break;
+      case "locate": locateAll(); break;
+      case "place": startPlacing(b.dataset.id); break;
+      case "cancel-place": mapUI.placing = null; renderMap(); break;
       case "export-json": exportJSON(); break;
       case "export-csv": exportCSV(); break;
       case "wipe":

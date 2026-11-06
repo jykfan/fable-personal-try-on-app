@@ -7,6 +7,7 @@ A neighborhood directory and emergency-preparedness organizer. Collect your neig
 - **Directory**: Add households: names, address, phones, email, occupation, household members, emergency **skills** (nurse, electrician, ham radio, languages…), shareable **equipment** (generator, chainsaw, AED…), special needs, and pets. Search and filter by skill ("who has a generator?").
 - **Consent tracking**: Each household records whether it agreed to be listed, when, and by whom, plus which fields it's OK to print. Households without consent never appear in the booklet or pods. Organizer notes are never printed.
 - **Pods**: Auto-assign consenting households into pods of up to 5 (configurable) by street and house number, so pod members are next-door neighbors. You can rename pods, pick a captain, and move households by hand.
+- **Map**: Enter your neighborhood address in Settings, then click **Find households on the map**. Each home gets a numbered flag, colored by pod. If a flag lands in the wrong spot, drag it. If an address can't be found, click "Place" and then click the map. The printed booklet includes a one-page **neighborhood map** with a numbered legend, and each directory listing shows its "Map #".
 - **Prepare**: Guides for shutting off gas, water, and electricity; generators; earthquakes; wildfire evacuation; household plans; and the pod check-in protocol. Also an interactive go-bag checklist and important phone numbers.
 - **Print**: A print-ready booklet (letter size) you can configure. It has a cover with important numbers, a directory grouped by street, a skills and resources index, pod check-off sheets, the guides, the go-bag checklist, OK/HELP window signs, and **blank sign-up and consent forms** to take door to door.
 - **Import & export** (Directory tab or Settings):
@@ -16,6 +17,8 @@ A neighborhood directory and emergency-preparedness organizer. Collect your neig
 ## Privacy model
 
 There's no server and no account. Everything is stored in the organizer's browser (`localStorage`) on one device. Nothing is uploaded. That keeps neighbors' personal information off the internet. The trade-off: **export a backup regularly**, and use the backup file to move the data to another computer or a co-organizer.
+
+**Map exception:** the map is the only feature that uses the internet. Map tiles come from CARTO (OpenStreetMap data), and the Leaflet map library loads from unpkg. When you click **Find households on the map**, each household's *street address and city* (never names or other details) is sent to OpenStreetMap's free Nominatim address service, one per second as its usage policy requires. Map coordinates are saved with each household and included in the backup and CSV exports.
 
 ## Running it
 
