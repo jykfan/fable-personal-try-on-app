@@ -279,6 +279,7 @@ fieldset.consent { background: var(--yellow-soft); border-color: var(--yellow); 
 .pod-print table { width: 100%; border-collapse: collapse; font-size: 9pt; }
 .pod-print td { border-top: 1px solid #ddd; padding: .25rem .2rem; vertical-align: top; }
 .pod-print td.box { width: 1.2rem; font-size: 11pt; }
+.pod-print td:last-child { white-space: nowrap; text-align: right; }
 
 .guides-print .guide { border: 0; padding: 0; margin: 0 0 .9rem; break-inside: avoid-page; background: none; }
 .guides-print .guide h2 { font-size: 1.2rem; }

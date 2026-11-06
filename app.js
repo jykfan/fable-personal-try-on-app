@@ -12,6 +12,7 @@
     ["occupation", "Occupation"],
     ["skills", "Skills"],
     ["resources", "Equipment & resources"],
+    ["members", "Household members (adults & children)"],
     ["needs", "Special needs & pets (shared with pod & responders)"],
   ];
 
@@ -45,6 +46,31 @@
     try { localStorage.setItem(key, val); return true; } catch { return false; }
   }
 
+  // ---------- household members ----------
+  function toCount(v) {
+    if (v === null || v === undefined || String(v).trim() === "") return null;
+    const n = parseInt(v, 10);
+    return Number.isFinite(n) && n >= 0 ? n : null;
+  }
+  // e.g. "2 adults, 2 children (ages 4, 7)"
+  function membersText(h) {
+    const parts = [];
+    if (h.adults != null) parts.push(`${h.adults} adult${h.adults === 1 ? "" : "s"}`);
+    if (h.children != null) parts.push(`${h.children} ${h.children === 1 ? "child" : "children"}`);
+    const counts = parts.join(", ");
+    if (!h.household) return counts;
+    return counts ? `${counts} (${h.household})` : h.household;
+  }
+  // Headcount for a group of households; "at least" when some counts are missing
+  function headcount(list) {
+    const known = list.filter((h) => h.adults != null || h.children != null);
+    if (!known.length) return "";
+    const people = known.reduce((n, h) => n + (h.adults || 0) + (h.children || 0), 0);
+    const kids = known.reduce((n, h) => n + (h.children || 0), 0);
+    const atLeast = known.length < list.length ? "at least " : "";
+    return `${atLeast}${people} ${people === 1 ? "person" : "people"}${kids ? `, ${kids} ${kids === 1 ? "child" : "children"}` : ""}`;
+  }
+
   // ---------- state ----------
   function blankState() {
     return {
@@ -75,7 +101,9 @@
       phone: h.phone || "",
       phone2: h.phone2 || "",
       email: h.email || "",
-      household: h.household || "",
+      household: h.household || "", // ages / other details about who lives there
+      adults: toCount(h.adults),
+      children: toCount(h.children),
       occupation: h.occupation || "",
       skills: Array.isArray(h.skills) ? h.skills : splitList(h.skills),
       resources: Array.isArray(h.resources) ? h.resources : splitList(h.resources),
@@ -246,6 +274,7 @@
           ${h.email ? `<dt>Email</dt><dd><a href="mailto:${esc(h.email)}">${esc(h.email)}</a></dd>` : ""}
           ${h.occupation ? `<dt>Work</dt><dd>${esc(h.occupation)}</dd>` : ""}
           ${h.needs ? `<dt>Needs</dt><dd class="needs">${esc(h.needs)}</dd>` : ""}
+          ${membersText(h) ? `<dt>Household</dt><dd>${esc(membersText(h))}</dd>` : ""}
           ${h.pets ? `<dt>Pets</dt><dd>${esc(h.pets)}</dd>` : ""}
         </dl>
         ${h.skills.length || h.resources.length ? `<div class="tags">
@@ -289,7 +318,6 @@
             <label>Second phone<input name="phone2" type="tel" value="${esc(h.phone2)}"></label>
             <label>Email<input name="email" type="email" value="${esc(h.email)}"></label>
             <label>Occupation(s)<input name="occupation" value="${esc(h.occupation)}"></label>
-            <label class="wide">Household members<input name="household" value="${esc(h.household)}" placeholder="e.g. 2 adults, 2 kids (ages 4, 7)"></label>
           </fieldset>
           <fieldset>
             <legend>Skills they can offer in an emergency</legend>
@@ -303,6 +331,9 @@
           </fieldset>
           <fieldset>
             <legend>Check-on-me info</legend>
+            <label>Adults<input name="adults" type="number" min="0" max="30" inputmode="numeric" value="${h.adults ?? ""}"></label>
+            <label>Children (under 18)<input name="children" type="number" min="0" max="30" inputmode="numeric" value="${h.children ?? ""}"></label>
+            <label class="wide">Ages &amp; other details<input name="household" value="${esc(h.household)}" placeholder="e.g. kids 4 and 7; grandmother (82) lives with us"></label>
             <label class="wide">Special needs<textarea name="needs" rows="2" placeholder="${esc(NEEDS_HINT)}">${esc(h.needs)}</textarea></label>
             <label class="wide">Pets<input name="pets" value="${esc(h.pets)}" placeholder="e.g. 2 dogs, 1 cat"></label>
           </fieldset>
@@ -355,6 +386,8 @@
         email: get("email"),
         occupation: get("occupation"),
         household: get("household"),
+        adults: get("adults"),
+        children: get("children"),
         skills: uniq([...fd.getAll("skills"), ...splitList(get("skillsOther"))]),
         resources: uniq([...fd.getAll("resources"), ...splitList(get("resourcesOther"))]),
         needs: get("needs"),
@@ -455,12 +488,13 @@
                   <div>
                     <strong>${esc(h.names)}</strong>${h.id === p.captainId ? ' <span class="badge">Captain</span>' : ""}
                     <div class="muted small">${esc(fullAddress(h))}${h.phone ? " · " + esc(h.phone) : ""}</div>
+                    ${membersText(h) ? `<div class="small">${esc(membersText(h))}</div>` : ""}
                     ${h.needs ? `<div class="needs small">⚠ ${esc(h.needs)}</div>` : ""}
                   </div>
                   <select data-move="${h.id}" aria-label="Move to pod">${podOptions(p.id)}</select>
                 </li>`).join("") || `<li class="muted">No members yet</li>`}
             </ul>
-            <footer class="muted small">${members.length} household${members.length === 1 ? "" : "s"}</footer>
+            <footer class="muted small">${members.length} household${members.length === 1 ? "" : "s"}${headcount(members) ? ` · ${headcount(members)}` : ""}</footer>
           </article>`;
         }).join("")}
       </section>
@@ -609,6 +643,9 @@
       resources: s.resources ? h.resources : [],
       needs: s.needs ? h.needs : "",
       pets: s.needs ? h.pets : "",
+      adults: s.members ? h.adults : null,
+      children: s.members ? h.children : null,
+      household: s.members ? h.household : "",
     };
   }
 
@@ -695,6 +732,7 @@
               ${h.occupation ? `<div><em>${esc(h.occupation)}</em></div>` : ""}
               ${h.skills.length ? `<div><b>Skills:</b> ${esc(h.skills.join(", "))}</div>` : ""}
               ${h.resources.length ? `<div><b>Has:</b> ${esc(h.resources.join(", "))}</div>` : ""}
+              ${membersText(h) ? `<div><b>Household:</b> ${esc(membersText(h))}</div>` : ""}
               ${h.needs ? `<div class="needs">⚠ ${esc(h.needs)}</div>` : ""}
               ${h.pets ? `<div><b>Pets:</b> ${esc(h.pets)}</div>` : ""}
               ${podName || (P.map && pinNo.get(h.id)) ? `<div class="small muted">${[podName, P.map && pinNo.get(h.id) ? `Map #${pinNo.get(h.id)}` : ""].filter(Boolean).map(esc).join(" · ")}</div>` : ""}
@@ -738,10 +776,12 @@
           ${pods.length ? pods.map(({ p, i, members }) => `
             <div class="pod-print">
               <h3>${esc(p.name || `Pod ${i + 1}`)}</h3>
+              ${headcount(members) ? `<div class="small muted">${members.length} households · ${esc(headcount(members))}</div>` : ""}
               <table>
                 ${members.map((h) => `<tr>
                   <td class="box">☐</td>
                   <td><strong>${esc(h.names)}</strong>${h.id === p.captainId ? " ★" : ""}<br><span class="small">${esc(fullAddress(h))}</span>
+                  ${membersText(h) ? `<br><span class="small">${esc(membersText(h))}</span>` : ""}
                   ${h.needs ? `<br><span class="needs small">⚠ ${esc(h.needs)}</span>` : ""}</td>
                   <td class="small">${esc(h.phone)}</td></tr>`).join("")}
               </table>
@@ -792,7 +832,9 @@
           ${line("Phone")}${line("Other phone")}
           ${line("Email")}
           ${line("Occupation(s)")}
-          ${line("Household members (adults / kids)")}
+          ${line("Adults (how many)")}
+          ${line("Children (how many, ages)")}
+          ${line("Others, e.g. grandparent (age)")}
           ${line("Pets")}
         </div>
         <h3>Skills you could offer in an emergency</h3>
@@ -806,7 +848,7 @@
         <div class="consent-box">
           <h3>Consent</h3>
           <p>☐ I/we agree to have our <strong>name and address</strong> listed in the ${esc(hood)} Mini Yellow Pages, shared only with participating neighbors, and to be placed in a check-in pod.</p>
-          <p>Also OK to print: ☐ Phone &nbsp; ☐ Email &nbsp; ☐ Occupation &nbsp; ☐ Skills &nbsp; ☐ Equipment &nbsp; ☐ Special needs (helps neighbors &amp; responders)</p>
+          <p>Also OK to print: ☐ Phone &nbsp; ☐ Email &nbsp; ☐ Occupation &nbsp; ☐ Skills &nbsp; ☐ Equipment &nbsp; ☐ Household members &nbsp; ☐ Special needs (helps neighbors &amp; responders)</p>
           <p class="small">You can ask to update or remove your listing at any time${s.organizer ? ` by contacting ${esc(s.organizer)}${s.organizerContact ? ` at ${esc(s.organizerContact)}` : ""}` : ""}.
           The directory is for neighborhood use only and won't be posted online or sold.</p>
           <div class="form-grid">${line("Signature")}${line("Date")}</div>
@@ -1200,7 +1242,7 @@
   // The CSV holds everything the .json backup does: households (one row each),
   // then labeled sections for settings, important numbers and the pod list.
   function exportCSV() {
-    const cols = ["names", "address", "unit", "phone", "phone2", "email", "occupation", "household", "skills", "resources", "needs", "pets", "consent", "consentDate", "signedBy", "hiddenFields", "pod", "podCaptain", "lat", "lon", "pin", "notes"];
+    const cols = ["names", "address", "unit", "phone", "phone2", "email", "occupation", "adults", "children", "household", "skills", "resources", "needs", "pets", "consent", "consentDate", "signedBy", "hiddenFields", "pod", "podCaptain", "lat", "lon", "pin", "notes"];
     const cell = (v) => {
       const s = String(v ?? "");
       return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -1216,7 +1258,7 @@
     });
     const podOf = (h) => state.pods.find((p) => p.id === h.podId);
     const lines = [line(cols), ...state.households.slice().sort(byAddress).map((h) => line([
-      h.names, h.address, h.unit, h.phone, h.phone2, h.email, h.occupation, h.household,
+      h.names, h.address, h.unit, h.phone, h.phone2, h.email, h.occupation, h.adults ?? "", h.children ?? "", h.household,
       h.skills.join("; "), h.resources.join("; "), h.needs, h.pets,
       h.consent.given ? "yes" : "no", h.consent.date, h.consent.signedBy,
       SHARE_FIELDS.filter(([k]) => !h.consent.share[k]).map(([k]) => k).join("; "),
@@ -1294,7 +1336,9 @@
     phone2: ["phone2", "otherphone", "secondphone", "altphone"],
     email: ["email", "emailaddress", "e-mail"],
     occupation: ["occupation", "occupations", "job", "work", "profession"],
-    household: ["household", "householdmembers", "members"],
+    household: ["household", "householdmembers", "members", "ages", "agesotherdetails", "memberdetails"],
+    adults: ["adults", "numadults", "numberofadults"],
+    children: ["children", "kids", "numchildren", "numberofchildren", "numkids", "childrenunder18"],
     skills: ["skills", "skill"],
     resources: ["resources", "equipment", "has"],
     needs: ["needs", "specialneeds"],
@@ -1343,6 +1387,7 @@
       const rec = {};
       ["names", "address", "unit", "phone", "phone2", "email", "occupation", "household", "needs", "pets", "notes"]
         .forEach((f) => { if (get(f) !== undefined) rec[f] = get(f); });
+      ["adults", "children"].forEach((f) => { if (get(f) !== undefined) rec[f] = toCount(get(f)); });
       ["skills", "resources"].forEach((f) => { if (get(f) !== undefined) rec[f] = uniq(get(f).split(/[;,]/).map((x) => x.trim()).filter(Boolean)); });
       if (get("consent") !== undefined || get("consentDate") !== undefined || get("signedBy") !== undefined || get("hiddenFields") !== undefined) {
         const hidden = (get("hiddenFields") || "").toLowerCase();
@@ -1449,9 +1494,10 @@
   }
 
   function addSamples() {
-    SAMPLE_HOUSEHOLDS.forEach(([names, address, phone, email, occupation, skills, resources, needs, pets]) => {
+    SAMPLE_HOUSEHOLDS.forEach(([names, address, phone, email, occupation, skills, resources, needs, pets], i) => {
+      const [adults, children, household] = SAMPLE_MEMBERS[i] || [];
       state.households.push(normalizeHousehold({
-        names, address, phone, email, occupation, skills, resources, needs, pets,
+        names, address, phone, email, occupation, skills, resources, needs, pets, adults, children, household,
         notes: "Sample entry",
         consent: { given: true, date: today(), signedBy: names },
       }));
