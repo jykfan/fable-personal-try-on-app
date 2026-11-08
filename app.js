@@ -79,6 +79,7 @@
         name: "",
         organizer: "",
         organizerContact: "",
+        formReturn: "",
         location: "",
         city: "",
         center: null,
@@ -168,14 +169,15 @@
   const fullAddress = (h) => h.address + (h.unit ? `, ${h.unit}` : "");
 
   // ---------- routing ----------
-  const routes = { directory: renderDirectory, pods: renderPods, map: renderMap, prepare: renderPrepare, print: renderPrint, settings: renderSettings };
+  const routes = { directory: renderDirectory, signup: renderSignup, pods: renderPods, map: renderMap, prepare: renderPrepare, print: renderPrint, settings: renderSettings };
   function currentRoute() {
     const r = location.hash.replace(/^#\/?/, "").split("/")[0];
     return routes[r] ? r : "directory";
   }
   function render() {
     const r = currentRoute();
-    $$("#tabs a").forEach((a) => a.classList.toggle("active", a.dataset.route === r));
+    const tab = r === "signup" ? "directory" : r; // sign-up forms live under the Directory tab
+    $$("#tabs a").forEach((a) => a.classList.toggle("active", a.dataset.route === tab));
     $("#hood-name").textContent = state.settings.name || "Your neighborhood";
     document.title = (state.settings.name ? state.settings.name + " · " : "") + "Mini Yellow Pages";
     routes[r]();
@@ -198,6 +200,7 @@
           <p class="muted">${hs.length} household${hs.length === 1 ? "" : "s"} · ${consented} consented to be listed</p>
         </div>
         <div class="btn-row">
+          <a class="btn" href="#/signup">Print sign-up forms</a>
           <label class="btn" title="Restore a .json backup, or add/update households from a .csv spreadsheet">Import…<input type="file" class="import-file" accept=".csv,.json,text/csv,application/json" hidden></label>
           ${hs.length ? `<button class="btn" data-act="export-csv">Export .csv</button>
           <button class="btn" data-act="export-json">Export backup .json</button>` : ""}
@@ -237,7 +240,8 @@
       <div class="empty">
         <h2>Start your neighborhood directory</h2>
         <ol>
-          <li>Go to <a href="#/print">Print</a> and print blank <strong>sign-up &amp; consent forms</strong> to take door to door.</li>
+          <li><a href="#/signup"><strong>Print sign-up forms</strong></a> and hand one to each household, door to door.</li>
+          <li>Collect the filled-in forms (a block party works well).</li>
           <li>Enter each returned form here with <strong>+ Add household</strong>.</li>
           <li>Group households into check-in <a href="#/pods">pods</a> of about 5.</li>
           <li>Print the finished booklet for every household that took part.</li>
@@ -816,44 +820,108 @@
     return out.join("") || `<p class="muted">Pick at least one section to print.</p>`;
   }
 
-  function signupFormHTML() {
+  // One-page paper form for neighbors to fill in. Its order matches the "Add household" screen.
+  function signupFormHTML(extraClass = "") {
     const s = state.settings;
     const hood = s.name || "our neighborhood";
     const line = (label, cls = "") => `<div class="fline ${cls}"><span>${label}</span><i></i></div>`;
+    const boxes = (items) => `<div class="form-checks">${items.map((x) => `<span>☐ ${esc(x)}</span>`).join("")}</div>`;
+    const contact = s.organizer ? ` by contacting ${esc(s.organizer)}${s.organizerContact ? ` (${esc(s.organizerContact)})` : ""}` : "";
     return `
-      <section class="sheet form">
-        <h2 class="sheet-title">Mini Yellow Pages: Neighbor sign-up</h2>
-        <p>We're putting together a printed directory for <strong>${esc(hood)}</strong> so neighbors can reach each other and help each other
-        in an emergency. We'll also set up check-in "pods" of about ${esc(s.podSize)} nearby households who agree to check on each other after a disaster.
-        Taking part is completely voluntary.</p>
+      <section class="sheet form ${extraClass}">
+        <div class="form-head">
+          <div class="form-mark">Mini<br>Yellow<br>Pages</div>
+          <div>
+            <h2>${esc(hood)}: neighbor sign-up</h2>
+            <p>We're making a printed directory so neighbors can reach and help each other in an emergency, and small check-in
+            "pods" of about ${esc(s.podSize)} nearby households who check on each other after a disaster. Taking part is voluntary,
+            and you choose what gets printed.</p>
+          </div>
+        </div>
+        <div class="return-box"><b>Please return this form:</b> ${s.formReturn ? esc(s.formReturn) : `<span class="blank-line"></span>`}</div>
+
+        <h3><span class="num">1</span> Who &amp; where</h3>
         <div class="form-grid">
-          ${line("Name(s) to list")}
-          ${line("Address / unit")}
+          ${line("Name(s) to list", "wide")}
+          ${line("Street address")}${line("Unit / apt")}
           ${line("Phone")}${line("Other phone")}
-          ${line("Email")}
-          ${line("Occupation(s)")}
-          ${line("Adults (how many)")}
-          ${line("Children (how many, ages)")}
-          ${line("Others, e.g. grandparent (age)")}
-          ${line("Pets")}
+          ${line("Email")}${line("Occupation(s)")}
         </div>
-        <h3>Skills you could offer in an emergency</h3>
-        <div class="form-checks">${SKILL_SUGGESTIONS.slice(0, 18).map((x) => `<span>☐ ${esc(x)}</span>`).join("")}</div>
+
+        <h3><span class="num">2</span> Skills you could offer in an emergency</h3>
+        ${boxes(SKILL_SUGGESTIONS)}
         ${line("Other skills / languages")}
-        <h3>Equipment you could share</h3>
-        <div class="form-checks">${RESOURCE_SUGGESTIONS.map((x) => `<span>☐ ${esc(x)}</span>`).join("")}</div>
-        <h3>Anything neighbors should know to check on you?</h3>
-        <p class="small">e.g. limited mobility, relies on powered medical equipment, lives alone, infant at home</p>
-        ${line("")}${line("")}
-        <div class="consent-box">
-          <h3>Consent</h3>
-          <p>☐ I/we agree to have our <strong>name and address</strong> listed in the ${esc(hood)} Mini Yellow Pages, shared only with participating neighbors, and to be placed in a check-in pod.</p>
-          <p>Also OK to print: ☐ Phone &nbsp; ☐ Email &nbsp; ☐ Occupation &nbsp; ☐ Skills &nbsp; ☐ Equipment &nbsp; ☐ Household members &nbsp; ☐ Special needs (helps neighbors &amp; responders)</p>
-          <p class="small">You can ask to update or remove your listing at any time${s.organizer ? ` by contacting ${esc(s.organizer)}${s.organizerContact ? ` at ${esc(s.organizerContact)}` : ""}` : ""}.
-          The directory is for neighborhood use only and won't be posted online or sold.</p>
-          <div class="form-grid">${line("Signature")}${line("Date")}</div>
+
+        <h3><span class="num">3</span> Equipment &amp; resources you could share</h3>
+        ${boxes(RESOURCE_SUGGESTIONS)}
+        ${line("Other")}
+
+        <h3><span class="num">4</span> Check on me: who lives here</h3>
+        <div class="form-grid three">
+          ${line("Adults (#)")}${line("Children under 18 (#)")}${line("Pets")}
         </div>
+        ${line("Ages &amp; other details (e.g. kids 4 and 7; grandmother, 82)")}
+        ${line("Special needs (e.g. limited mobility, uses oxygen, lives alone, infant)")}
+        ${line("")}
+
+        <div class="consent-box">
+          <h3><span class="num">5</span> Consent</h3>
+          <p>☐ <b>Yes, list us.</b> I/we agree to have our <b>name and address</b> printed in the ${esc(hood)} Mini Yellow Pages,
+          shared only with participating neighbors, and to be placed in a check-in pod.</p>
+          <p><b>Also OK to print</b> (check all that apply):</p>
+          ${boxes(SHARE_FIELDS.map(([, label]) => label.replace(/ \(.*\)$/, "")))}
+          <div class="form-grid three sig">${line("Signature")}${line("Printed name")}${line("Date")}</div>
+          <p class="small">You can update or remove your listing at any time${contact}. This directory is for neighborhood use only.
+          It won't be posted online or sold.</p>
+        </div>
+        <div class="office">For organizer: ☐ Entered &nbsp; Date ______</div>
       </section>`;
+  }
+
+  // ---------- Sign-up forms page (reached from the Directory tab) ----------
+  const SIGNUP_KEY = "myp:signup:v1";
+  function renderSignup() {
+    let copies = 20;
+    try { copies = JSON.parse(safeGet(SIGNUP_KEY) || "{}").copies || 20; } catch { /* default */ }
+    const s = state.settings;
+    $("#view").innerHTML = `
+      <section class="page-head no-print">
+        <div>
+          <h1>Sign-up forms</h1>
+          <p class="muted">Print a stack, drop one at each door, and collect them (a block party works well). Then enter each one
+          in the Directory with <strong>+ Add household</strong>. The form follows the same order as that screen.
+          Only households that tick <b>"Yes, list us"</b> should be marked as consented.</p>
+        </div>
+        <div class="btn-row">
+          <a class="btn" href="#/directory">← Directory</a>
+          <button class="btn primary" data-act="print">Print ${copies} form${copies === 1 ? "" : "s"}…</button>
+        </div>
+      </section>
+      <section class="print-opts no-print signup-opts">
+        <label class="inline">Copies <input type="number" id="su-copies" min="1" max="200" value="${copies}"></label>
+        <label class="grow">Where &amp; when should neighbors return it?
+          <input id="su-return" value="${esc(s.formReturn)}" placeholder="e.g. Bring it to the block party on Sat, Dec 6, or drop it in the mailbox at 112 Oak St">
+        </label>
+        <p class="muted small">The form also uses your neighborhood name, pod size and organizer contact from <a href="#/settings">Settings</a>.</p>
+      </section>
+      <div class="booklet" id="signup-forms"></div>
+    `;
+    const draw = () => {
+      // Show one form on screen; print all the copies.
+      $("#signup-forms").innerHTML = signupFormHTML() + Array.from({ length: copies - 1 }, () => signupFormHTML("print-only")).join("");
+      $("[data-act=print]").textContent = `Print ${copies} form${copies === 1 ? "" : "s"}…`;
+    };
+    draw();
+    $("#su-copies").addEventListener("change", (e) => {
+      copies = Math.max(1, Math.min(200, parseInt(e.target.value, 10) || 1));
+      e.target.value = copies;
+      safeSet(SIGNUP_KEY, JSON.stringify({ copies }));
+      draw();
+    });
+    $("#su-return").addEventListener("change", (e) => {
+      s.formReturn = e.target.value.trim();
+      save(); draw();
+    });
   }
 
   // ---------- Map ----------
@@ -1234,6 +1302,7 @@
     ["organizer", "Organizer"],
     ["organizerContact", "Organizer contact"],
     ["podSize", "Households per pod"],
+    ["formReturn", "Sign-up form return instructions"],
     ["location", "Neighborhood address"],
     ["city", "City, state & ZIP"],
     ["center", "Map center"],

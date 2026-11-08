@@ -387,3 +387,45 @@ label .hint { font-weight: 400; margin: 0; }
   .map-print { width: 7.2in; height: 6.3in; }
   .map-sheet .pod-legend, .map-sheet .map-legend { font-size: 9pt; }
 }
+
+/* ---- sign-up one-pager ---- */
+.print-only { display: none; }
+.signup-opts .grow { flex: 1 1 360px; flex-direction: column; align-items: stretch; white-space: normal; }
+.form { font-size: 9.5pt; line-height: 1.3; }
+.form-head { display: flex; gap: .2in; align-items: flex-start; }
+.form-head h2 { margin: 0 0 .15rem; font-size: 1.35rem; }
+.form-head p { margin: 0; }
+.form-mark {
+  flex-shrink: 0; background: #f5c518; color: #111; border: 2px solid #111; border-radius: 6px;
+  font: 900 .78rem/1 var(--serif); padding: .35rem .45rem;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+.return-box { border: 1.5px dashed #111; border-radius: 6px; padding: .3rem .6rem; margin: .45rem 0 .1rem; display: flex; gap: .4rem; align-items: flex-end; }
+.blank-line { flex: 1; border-bottom: 1px solid #333; min-height: 1.1rem; }
+.form h3 { display: flex; align-items: center; gap: .4rem; font-size: .95rem; margin: .55rem 0 .15rem; }
+.form h3 .num {
+  display: inline-grid; place-items: center; width: 1.25rem; height: 1.25rem; border-radius: 50%;
+  background: #111; color: #fff; font: 700 .7rem var(--sans);
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+.form .fline { height: 1.6rem; }
+.form-grid .fline.wide { grid-column: 1 / -1; }
+.form-grid.three { grid-template-columns: 1fr 1fr 1fr; gap: .1rem .25in; }
+.form .form-checks { grid-template-columns: repeat(4, 1fr); font-size: 8.5pt; gap: .05rem .4rem; }
+.form .consent-box { margin-top: .5rem; padding: .3rem .65rem .4rem; }
+.form .consent-box p { margin: .25rem 0; }
+.form .consent-box .form-checks { grid-template-columns: repeat(4, auto); justify-content: start; gap: .1rem 1rem; }
+.form .sig { margin-top: .2rem; }
+.office { text-align: right; font-size: 8pt; color: #555; margin-top: .3rem; }
+@media (max-width: 640px) {
+  .form .form-checks { grid-template-columns: 1fr 1fr; }
+  .form-grid.three { grid-template-columns: 1fr; }
+  .form .consent-box .form-checks { grid-template-columns: 1fr 1fr; }
+  .form .fline { height: auto; min-height: 1.6rem; flex-wrap: wrap; }
+  .form .fline span { white-space: normal; }
+  .form .fline i { min-width: 40%; }
+  .return-box { flex-wrap: wrap; }
+}
+@media print {
+  .print-only { display: block; }
+}
