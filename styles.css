@@ -400,8 +400,6 @@ label .hint { font-weight: 400; margin: 0; }
   font: 900 .78rem/1 var(--serif); padding: .35rem .45rem;
   -webkit-print-color-adjust: exact; print-color-adjust: exact;
 }
-.return-box { border: 1.5px dashed #111; border-radius: 6px; padding: .3rem .6rem; margin: .45rem 0 .1rem; display: flex; gap: .4rem; align-items: flex-end; }
-.blank-line { flex: 1; border-bottom: 1px solid #333; min-height: 1.1rem; }
 .form h3 { display: flex; align-items: center; gap: .4rem; font-size: .95rem; margin: .55rem 0 .15rem; }
 .form h3 .num {
   display: inline-grid; place-items: center; width: 1.25rem; height: 1.25rem; border-radius: 50%;
@@ -424,7 +422,6 @@ label .hint { font-weight: 400; margin: 0; }
   .form .fline { height: auto; min-height: 1.6rem; flex-wrap: wrap; }
   .form .fline span { white-space: normal; }
   .form .fline i { min-width: 40%; }
-  .return-box { flex-wrap: wrap; }
 }
 @media print {
   .print-only { display: block; }

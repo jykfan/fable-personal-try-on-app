@@ -79,7 +79,6 @@
         name: "",
         organizer: "",
         organizerContact: "",
-        formReturn: "",
         location: "",
         city: "",
         center: null,
@@ -139,6 +138,7 @@
     const base = blankState();
     const s = { ...base, ...data };
     s.settings = { ...base.settings, ...(data.settings || {}) };
+    delete s.settings.formReturn; // removed setting (sign-up form return instructions)
     if (!Array.isArray(s.settings.numbers)) s.settings.numbers = base.settings.numbers;
     s.households = (data.households || []).map(normalizeHousehold);
     s.pods = (data.pods || []).map((p) => ({ id: p.id || uid(), name: p.name || "", captainId: p.captainId || null }));
@@ -241,7 +241,7 @@
         <h2>Start your neighborhood directory</h2>
         <ol>
           <li><a href="#/signup"><strong>Print sign-up forms</strong></a> and hand one to each household, door to door.</li>
-          <li>Collect the filled-in forms (a block party works well).</li>
+          <li>Collect the filled-in forms.</li>
           <li>Enter each returned form here with <strong>+ Add household</strong>.</li>
           <li>Group households into check-in <a href="#/pods">pods</a> of about 5.</li>
           <li>Print the finished booklet for every household that took part.</li>
@@ -838,7 +838,6 @@
             and you choose what gets printed.</p>
           </div>
         </div>
-        <div class="return-box"><b>Please return this form:</b> ${s.formReturn ? esc(s.formReturn) : `<span class="blank-line"></span>`}</div>
 
         <h3><span class="num">1</span> Who &amp; where</h3>
         <div class="form-grid">
@@ -888,7 +887,7 @@
       <section class="page-head no-print">
         <div>
           <h1>Sign-up forms</h1>
-          <p class="muted">Print a stack, drop one at each door, and collect them (a block party works well). Then enter each one
+          <p class="muted">Print a stack, drop one at each door, and collect them. Then enter each one
           in the Directory with <strong>+ Add household</strong>. The form follows the same order as that screen.
           Only households that tick <b>"Yes, list us"</b> should be marked as consented.</p>
         </div>
@@ -899,9 +898,6 @@
       </section>
       <section class="print-opts no-print signup-opts">
         <label class="inline">Copies <input type="number" id="su-copies" min="1" max="200" value="${copies}"></label>
-        <label class="grow">Where &amp; when should neighbors return it?
-          <input id="su-return" value="${esc(s.formReturn)}" placeholder="e.g. Bring it to the block party on Sat, Dec 6, or drop it in the mailbox at 112 Oak St">
-        </label>
         <p class="muted small">The form also uses your neighborhood name, pod size and organizer contact from <a href="#/settings">Settings</a>.</p>
       </section>
       <div class="booklet" id="signup-forms"></div>
@@ -917,10 +913,6 @@
       e.target.value = copies;
       safeSet(SIGNUP_KEY, JSON.stringify({ copies }));
       draw();
-    });
-    $("#su-return").addEventListener("change", (e) => {
-      s.formReturn = e.target.value.trim();
-      save(); draw();
     });
   }
 
@@ -1302,7 +1294,6 @@
     ["organizer", "Organizer"],
     ["organizerContact", "Organizer contact"],
     ["podSize", "Households per pod"],
-    ["formReturn", "Sign-up form return instructions"],
     ["location", "Neighborhood address"],
     ["city", "City, state & ZIP"],
     ["center", "Map center"],
