@@ -826,7 +826,6 @@
     const hood = s.name || "our neighborhood";
     const line = (label, cls = "") => `<div class="fline ${cls}"><span>${label}</span><i></i></div>`;
     const boxes = (items) => `<div class="form-checks">${items.map((x) => `<span>☐ ${esc(x)}</span>`).join("")}</div>`;
-    const contact = s.organizer ? ` by contacting ${esc(s.organizer)}${s.organizerContact ? ` (${esc(s.organizerContact)})` : ""}` : "";
     return `
       <section class="sheet form ${extraClass}">
         <div class="form-head">
@@ -870,8 +869,6 @@
           <p><b>Also OK to print</b> (check all that apply):</p>
           ${boxes(SHARE_FIELDS.map(([, label]) => label.replace(/ \(.*\)$/, "")))}
           <div class="form-grid three sig">${line("Signature")}${line("Printed name")}${line("Date")}</div>
-          <p class="small">You can update or remove your listing at any time${contact}. This directory is for neighborhood use only.
-          It won't be posted online or sold.</p>
         </div>
         <div class="office">For organizer: ☐ Entered &nbsp; Date ______</div>
       </section>`;
@@ -898,7 +895,7 @@
       </section>
       <section class="print-opts no-print signup-opts">
         <label class="inline">Copies <input type="number" id="su-copies" min="1" max="200" value="${copies}"></label>
-        <p class="muted small">The form also uses your neighborhood name, pod size and organizer contact from <a href="#/settings">Settings</a>.</p>
+        <p class="muted small">The form also uses your neighborhood name and pod size from <a href="#/settings">Settings</a>.</p>
       </section>
       <div class="booklet" id="signup-forms"></div>
     `;
